@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
@@ -183,6 +183,32 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
       ...item.part.name === undefined ? {} : { name: item.part.name },
     })
     blocks.push({ type: 'image', attachment })
+  }
+  return blocks
+}
+
+/** Resolve the durable filesystem path for a locally-stored image, when the backend exposes its root. */
+function imageObjectPath(ctx: Context, ref: ImageAttachmentRef): string | undefined {
+  const store = ctx.get('attachments') as { root?: unknown } | undefined
+  const root = typeof store?.root === 'string' ? store.root : undefined
+  if (root === undefined) return undefined
+  const id = String(ref.attachmentId)
+  if (!id.startsWith('sha256:')) return undefined
+  const sha = id.slice('sha256:'.length)
+  if (!/^[a-f0-9]{64}$/.test(sha)) return undefined
+  return join(root, 'objects', sha.slice(0, 2), sha)
+}
+
+/** Attach the derived filesystem path to image blocks so a text-only model can reach the raster through a tool. */
+function imageBlocksWithPath(ctx: Context, content: readonly ContentBlock[]): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  for (const block of content) {
+    if (block.type !== 'image') {
+      blocks.push(block)
+      continue
+    }
+    const path = imageObjectPath(ctx, block.attachment)
+    blocks.push(path === undefined ? block : { ...block, path })
   }
   return blocks
 }
@@ -2482,19 +2508,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
           try {
+            let textOnlyImage = false
             if (hasImage) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
-              if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
-                return err(request, {
-                  code: 'attachment-error',
-                  message: `Model "${current.model}" does not support image input.`,
-                  details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
-                })
-              }
+              textOnlyImage = modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')
             }
             const durable = await durablePromptContent(ctx, content)
-            const message: UserMessage = createUserMessage({ content: durable, source })
+            const message: UserMessage = createUserMessage({
+              content: textOnlyImage ? imageBlocksWithPath(ctx, durable) : durable,
+              source,
+            })
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
           } catch (error: unknown) {

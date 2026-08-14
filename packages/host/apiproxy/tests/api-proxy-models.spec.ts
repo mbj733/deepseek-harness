@@ -196,6 +196,59 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('admits images to a text-only model by keeping the image and stamping its filesystem path', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    const sha = 'a'.repeat(64)
+    const validateImage = vi.fn((_input: { data: Uint8Array }) => Promise.resolve())
+    const saveImage = vi.fn((input: { data: Uint8Array; mediaType: 'image/png'; name?: string }) => Promise.resolve({
+      attachmentId: `sha256:${sha}`,
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      width: 1,
+      height: 1,
+      ...input.name === undefined ? {} : { name: input.name },
+    }))
+    ctx.provide('attachments', {
+      root: '/tmp/attachments/v1',
+      imageLimits: {
+        maxImageBytes: 4,
+        maxImagesPerMessage: 2,
+        maxMessageImageBytes: 4,
+        maxImagePixels: 4,
+        mediaTypes: ['image/png'],
+      },
+      validateImage,
+      saveImage,
+    } as never)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'text-only', model: 'plain' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==', name: 'first.png' },
+        { type: 'text' as const, text: '这是什么？' },
+      ],
+    }))
+    expect(result.result.ok).toBe(true)
+    const content = (followup.mock.calls[0]?.[0] as UserMessage).content
+    expect(content).toHaveLength(2)
+    expect(content[0]).toMatchObject({ type: 'image' })
+    const imageBlock = content[0] as { type: 'image'; attachment: { name?: string }; path?: string }
+    expect(imageBlock.attachment.name).toBe('first.png')
+    expect(imageBlock.path).toBeDefined()
+    expect(String(imageBlock.path)).toContain('objects')
+    expect(String(imageBlock.path)).toContain(sha)
+    expect(content[1]).toEqual({ type: 'text', text: '这是什么？' })
+    await ctx.fiber.dispose()
+  })
+
   it('refuses a text-only selection while durable or pending image content remains visible', async () => {
     const { ctx, agent, sessionId } = await harness()
     registerTextOnly(ctx)

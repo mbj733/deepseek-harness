@@ -72,6 +72,13 @@ export interface ImageBlock {
   type: 'image'
   /** Immutable bytes and intrinsic display metadata owned by the attachment service. */
   attachment: ImageAttachmentRef
+  /**
+   * Optional local filesystem path to the stored object, populated for
+   * text-only models so they can reach the raster through a vision tool
+   * instead of reading it natively. Never rendered by the UI; the attachment
+   * reference stays the display source of truth.
+   */
+  path?: string
 }
 
 /** A tool invocation requested by the model. */

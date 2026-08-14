@@ -133,17 +133,34 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'user', content: 'see chart' }])
   })
 
-  it('rejects image blocks instead of silently flattening them away', () => {
-    expect(() => serializeMessages([createUserMessage({
+  it('degrades image blocks to a name-only placeholder instead of dropping or rejecting them', () => {
+    const wire = serializeMessages([createUserMessage({
       content: [{
         type: 'image',
         attachment: {
           attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-          mediaType: 'image/png', bytes: 68, width: 1, height: 1,
+          mediaType: 'image/png', bytes: 68, width: 1, height: 1, name: 'shot.png',
         },
       }],
       source: { kind: 'plugin', plugin: 'test' },
-    })])).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CONTENT' }))
+    })])
+    expect(wire).toEqual([{ role: 'user', content: '[图片附件: shot.png]' }])
+  })
+
+  it('embeds the filesystem path in the placeholder so a text-only model can reach the image', () => {
+    const wire = serializeMessages([createUserMessage({
+      content: [{
+        type: 'image',
+        path: 'C:/home/attachments/v1/objects/aa/' + 'a'.repeat(64),
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+          mediaType: 'image/png', bytes: 68, width: 1, height: 1, name: 'shot.png',
+        },
+      }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })])
+    expect(wire[0]?.content).toContain('deepseek_vision')
+    expect(wire[0]?.content).toContain('objects/aa/')
   })
 
   it('emits an empty user message rather than dropping block-less messages', () => {
