@@ -219,6 +219,8 @@ const LONE_SURROGATE = /[\ud800-\udfff]/gu
  * their `\uNNNN` escapes (see {@link LONE_SURROGATE}); the escape's own backslash is
  * emitted literally by both consumers, since {@link docLines} doubles it into a
  * Python source escape and a `#` comment carries it verbatim.
+ * A literal `{{` is split here so the system-prompt variable interpolator never
+ * reads a brace group as a variable reference.
  */
 function describe(schema: object): string | undefined {
   const description = (schema as Record<string, unknown>).description
@@ -227,6 +229,7 @@ function describe(schema: object): string | undefined {
     .replace(/\s+/g, ' ')
     .replace(UNPRINTABLE, char => `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
     .replace(LONE_SURROGATE, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
+    .replaceAll('{{', '{ {')
     .trim()
   return collapsed.length === 0 ? undefined : collapsed
 }

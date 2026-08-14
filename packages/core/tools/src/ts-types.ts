@@ -32,9 +32,10 @@ function pad(indent: number): string {
 function docLines(description: unknown, indent: number): string[] {
   if (typeof description !== 'string' || description.length === 0) return []
   // Collapse prose to stable one-line docs and escape comment closers so a
-  // schema description cannot terminate generated JSDoc.
+  // schema description cannot terminate generated JSDoc; `{{` is split so the
+  // system-prompt variable interpolator never misreads a literal brace group.
   const collapsed = description.replace(/\s+/g, ' ').trim()
-  return [`${pad(indent)}/** ${collapsed.replaceAll('*/', String.raw`*\/`)} */`]
+  return [`${pad(indent)}/** ${collapsed.replaceAll('*/', String.raw`*\/`).replaceAll('{{', '{ {')} */`]
 }
 
 /** Render one scalar already validated by the unified schema boundary. */

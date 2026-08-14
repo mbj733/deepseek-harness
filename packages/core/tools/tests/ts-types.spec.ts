@@ -168,4 +168,10 @@ describe('renderToolsSdk', () => {
     expect(text).toContain('interface ToolArgsMap {}')
     expect(text).toContain('interface ToolOutputMap {}')
   })
+
+  it('splits a literal `{{` in a description so the prompt interpolator never sees a variable reference', () => {
+    const text = renderToolsSdk([{ ...bash, description: 'scan for leftover placeholders (xxxx, {{...}}, $VAR$)' }])
+    expect(text).not.toContain('{{')
+    expect(text).toContain('{ {...}}')
+  })
 })

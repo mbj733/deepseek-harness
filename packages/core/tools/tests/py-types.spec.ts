@@ -1169,4 +1169,10 @@ describe('renderToolsSdkPy', () => {
     // regex's `u` flag is what draws that line, so an emoji survives intact.
     expect(renderToolsSdkPy([described('emoji \u{1f600} ok')])).toContain('"""emoji \u{1f600} ok"""')
   })
+
+  it('splits a literal `{{` in a description so the prompt interpolator never sees a variable reference', () => {
+    const text = renderToolsSdkPy([described('scan for leftover placeholders (xxxx, {{...}}, $VAR$)')])
+    expect(text).not.toContain('{{')
+    expect(text).toContain('{ {...}}')
+  })
 })
